@@ -1,8 +1,8 @@
-streamlit==1.28.0
-pandas==2.1.0
-plotly==5.15.0
-gspread==5.11.0
-google-auth==2.23.0
-streamlit-option-menu==0.3.6
-openpyxl==3.1.2
-xlsxwriter==3.1.2
+streamlit
+pandas
+plotly
+gspread
+google-auth
+streamlit-option-menu
+openpyxl
+xlsxwriter
