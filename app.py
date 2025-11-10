@@ -1,7 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 import base64
 import plotly.express as px
 from streamlit_option_menu import option_menu
@@ -77,39 +80,47 @@ def load_data():
     if SHEET is None:
         # Initialize with string dtype for time columns
         dtypes = {col: "string" for col in TIME_COLUMNS}
-        dtypes.update({'User': 'string', 'Date': 'string', 'TotalHours': 'float64',
+        dtypes.update({'User': 'string', 'Date': 'datetime64[ns]', 'TotalHours': 'float64',
                        'BreakDuration': 'float64', 'Active': 'boolean'})
         return pd.DataFrame(columns=EXPECTED_COLUMNS).astype(dtypes)
     
     try:
         data = SHEET.get_all_records()
         df = pd.DataFrame(data)
-        for col in EXPECTED_COLUMNS:
-            if col not in df.columns:
+        
+        # Handle empty dataframe
+        if df.empty:
+            for col in EXPECTED_COLUMNS:
                 if col == 'Active':
                     df[col] = True
                 elif col in TIME_COLUMNS:
                     df[col] = pd.NA
                 else:
                     df[col] = pd.NA
+        
         # Replace empty strings with pd.NA
         df.replace('', pd.NA, inplace=True)
+        
         # Convert time columns to string
         for col in TIME_COLUMNS:
             df[col] = df[col].astype("string").fillna(pd.NA)
+        
         # Ensure other dtypes
         df['TotalHours'] = pd.to_numeric(df['TotalHours'], errors='coerce').fillna(0.0).astype("float64")
         df['BreakDuration'] = pd.to_numeric(df['BreakDuration'], errors='coerce').fillna(0.0).astype("float64")
+        
         # Convert Active safely
         df['Active'] = df['Active'].apply(to_boolean).astype("boolean")
-        # Convert Date to datetime for charting
+        
+        # Convert Date to datetime for charting - handle errors gracefully
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        
         return df
     except Exception as e:
         st.error(f"Error loading data from Google Sheets: {str(e)}")
         # Initialize with string dtype for time columns
         dtypes = {col: "string" for col in TIME_COLUMNS}
-        dtypes.update({'User': 'string', 'Date': 'string', 'TotalHours': 'float64',
+        dtypes.update({'User': 'string', 'Date': 'datetime64[ns]', 'TotalHours': 'float64',
                        'BreakDuration': 'float64', 'Active': 'boolean'})
         return pd.DataFrame(columns=EXPECTED_COLUMNS).astype(dtypes)
 
@@ -124,15 +135,23 @@ def save_data():
         return False
     
     try:
-        # Temporarily convert Date back to string for saving
+        # Create a copy for saving
         df_save = df.copy()
-        df_save['Date'] = df_save['Date'].dt.strftime('%Y-%m-%d')
+        
+        # Convert Date column to string format safely
+        df_save['Date'] = df_save['Date'].apply(
+            lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x)
+        )
+        
         # Clear the sheet
         SHEET.clear()
+        
         # Add header
         SHEET.append_row(EXPECTED_COLUMNS)
+        
         # Prepare data as list of lists, replacing pd.NA with empty string for Sheets
-        data = df_save.replace({pd.NA: ''}).values.tolist()
+        data = df_save.replace({pd.NA: '', pd.NaT: ''}).values.tolist()
+        
         # Append rows
         if data:
             SHEET.append_rows(data)
@@ -150,6 +169,7 @@ def restore_from_excel(uploaded_file):
         if not all(col in uploaded_df.columns for col in ['User', 'Date']):
             st.error("Uploaded Excel file must contain 'User' and 'Date' columns.")
             return False
+        
         # Ensure all expected columns are present
         for col in EXPECTED_COLUMNS:
             if col not in uploaded_df.columns:
@@ -159,16 +179,23 @@ def restore_from_excel(uploaded_file):
                     uploaded_df[col] = pd.NA
                 else:
                     uploaded_df[col] = pd.NA
+        
         # Convert time columns to string
         for col in TIME_COLUMNS:
             uploaded_df[col] = uploaded_df[col].astype("string").fillna(pd.NA)
+        
         # Ensure other columns have correct dtypes
         uploaded_df['User'] = uploaded_df['User'].astype("string")
+        
+        # Convert Date safely
         uploaded_df['Date'] = pd.to_datetime(uploaded_df['Date'], errors='coerce')
+        
         uploaded_df['TotalHours'] = uploaded_df['TotalHours'].astype("float64")
         uploaded_df['BreakDuration'] = uploaded_df['BreakDuration'].astype("float64")
+        
         # Convert Active safely
         uploaded_df['Active'] = uploaded_df['Active'].apply(to_boolean).astype("boolean")
+        
         # Merge with existing data, prioritizing uploaded data for duplicates
         df = pd.concat([df, uploaded_df]).drop_duplicates(subset=['User', 'Date', 'CheckIn'], keep='last').reset_index(drop=True)
         return save_data()
@@ -503,12 +530,12 @@ if selected == "User Portal":
             st.session_state.selected_user = None # Reset selection
         else:
             shift_date = get_shift_date()
-            user_rows = df[(df['User'] == user_name) & (df['Date'] == str(shift_date))]
+            user_rows = df[(df['User'] == user_name) & (df['Date'] == pd.to_datetime(str(shift_date)))]
             # Create a new record for each check-in
             if st.button("Start New Session", key="start_session"):
                 new_row = {
                     'User': user_name,
-                    'Date': str(shift_date),
+                    'Date': pd.to_datetime(str(shift_date)),
                     'Active': True,
                     'CheckIn': pd.NA,
                     'CheckOut': pd.NA,
@@ -523,7 +550,7 @@ if selected == "User Portal":
                 }
                 new_row_df = pd.DataFrame([new_row]).astype({
                     'User': 'string',
-                    'Date': 'string',
+                    'Date': 'datetime64[ns]',
                     'CheckIn': 'string',
                     'CheckOut': 'string',
                     'Break1Start': 'string',
@@ -539,7 +566,7 @@ if selected == "User Portal":
                 df = pd.concat([df, new_row_df], ignore_index=True)
                 save_data()
                 st.success("New Session Initialized")
-                user_rows = df[(df['User'] == user_name) & (df['Date'] == str(shift_date))]
+                user_rows = df[(df['User'] == user_name) & (df['Date'] == pd.to_datetime(str(shift_date)))]
             if not user_rows.empty:
                 row_index = user_rows.index[-1] # Most recent record
                 st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -769,7 +796,7 @@ elif selected == "Admin Dashboard":
             if user_records.empty or not user_records['Active'].any():
                 new_row = {
                     'User': new_user,
-                    'Date': str(get_shift_date()),
+                    'Date': pd.to_datetime(str(get_shift_date())),
                     'Active': True,
                     'CheckIn': pd.NA,
                     'CheckOut': pd.NA,
@@ -784,7 +811,7 @@ elif selected == "Admin Dashboard":
                 }
                 new_row_df = pd.DataFrame([new_row]).astype({
                     'User': 'string',
-                    'Date': 'string',
+                    'Date': 'datetime64[ns]',
                     'CheckIn': 'string',
                     'CheckOut': 'string',
                     'Break1Start': 'string',
