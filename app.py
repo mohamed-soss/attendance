@@ -39,6 +39,7 @@ try:
 except Exception as e:
     st.error(f"Error initializing Google Sheets: {str(e)}")
     SHEET = None
+
 # Define expected columns
 EXPECTED_COLUMNS = ['User', 'Date', 'CheckIn', 'CheckOut',
                     'Break1Start', 'Break1End', 'Break2Start', 'Break2End',
@@ -70,6 +71,8 @@ def to_boolean(value):
 try:
     data = SHEET.get_all_records()
     df = pd.DataFrame(data)
+    
+    # Ensure all expected columns exist
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
             if col == 'Active':
@@ -78,18 +81,25 @@ try:
                 df[col] = pd.NA
             else:
                 df[col] = pd.NA
+                
     # Replace empty strings with pd.NA
     df.replace('', pd.NA, inplace=True)
+    
     # Convert time columns to string
     for col in TIME_COLUMNS:
         df[col] = df[col].astype("string").fillna(pd.NA)
+        
     # Ensure other dtypes
     df['TotalHours'] = pd.to_numeric(df['TotalHours'], errors='coerce').fillna(0.0).astype("float64")
     df['BreakDuration'] = pd.to_numeric(df['BreakDuration'], errors='coerce').fillna(0.0).astype("float64")
+    
     # Convert Active safely
     df['Active'] = df['Active'].apply(to_boolean).astype("boolean")
-    # Convert Date to datetime for charting
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    
+    # Convert Date to datetime for charting - handle both string and datetime
+    if not df.empty and 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    
 except Exception as e:
     st.error(f"Error loading data from Google Sheets: {str(e)}")
     # Initialize with string dtype for time columns
@@ -102,17 +112,27 @@ except Exception as e:
 def save_data():
     global df
     try:
-        # Temporarily convert Date back to string for saving
+        # Create a copy for saving
         df_save = df.copy()
-        df_save['Date'] = df_save['Date'].dt.strftime('%Y-%m-%d')
+        
+        # Convert Date column to string format consistently
+        df_save['Date'] = df_save['Date'].apply(
+            lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x) if pd.notna(x) else ''
+        )
+        
         # Clear the sheet
         SHEET.clear()
+        
         # Add header
         SHEET.append_row(EXPECTED_COLUMNS)
+        
         # Prepare data as list of lists, replacing pd.NA with empty string for Sheets
-        data = df_save.replace({pd.NA: ''}).values.tolist()
+        data = df_save.fillna('').values.tolist()
+        
         # Append rows
-        SHEET.append_rows(data)
+        if data:
+            SHEET.append_rows(data)
+            
     except Exception as e:
         st.error(f"Error saving data to Google Sheets: {str(e)}")
 
@@ -125,6 +145,7 @@ def restore_from_excel(uploaded_file):
         if not all(col in uploaded_df.columns for col in ['User', 'Date']):
             st.error("Uploaded Excel file must contain 'User' and 'Date' columns.")
             return False
+            
         # Ensure all expected columns are present
         for col in EXPECTED_COLUMNS:
             if col not in uploaded_df.columns:
@@ -134,20 +155,25 @@ def restore_from_excel(uploaded_file):
                     uploaded_df[col] = pd.NA
                 else:
                     uploaded_df[col] = pd.NA
+                    
         # Convert time columns to string
         for col in TIME_COLUMNS:
             uploaded_df[col] = uploaded_df[col].astype("string").fillna(pd.NA)
+            
         # Ensure other columns have correct dtypes
         uploaded_df['User'] = uploaded_df['User'].astype("string")
         uploaded_df['Date'] = pd.to_datetime(uploaded_df['Date'], errors='coerce')
         uploaded_df['TotalHours'] = uploaded_df['TotalHours'].astype("float64")
         uploaded_df['BreakDuration'] = uploaded_df['BreakDuration'].astype("float64")
+        
         # Convert Active safely
         uploaded_df['Active'] = uploaded_df['Active'].apply(to_boolean).astype("boolean")
+        
         # Merge with existing data, prioritizing uploaded data for duplicates
         df = pd.concat([df, uploaded_df]).drop_duplicates(subset=['User', 'Date', 'CheckIn'], keep='last').reset_index(drop=True)
         save_data()
         return True
+        
     except Exception as e:
         st.error(f"Error restoring data: {str(e)}")
         return False
@@ -804,7 +830,9 @@ elif selected == "Admin Dashboard":
         # Download Excel
         def get_excel_download_link(df):
             df_download = df.copy()
-            df_download['Date'] = df_download['Date'].dt.strftime('%Y-%m-%d')
+            df_download['Date'] = df_download['Date'].apply(
+                lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else str(x) if pd.notna(x) else ''
+            )
             with pd.ExcelWriter('attendance.xlsx', engine='xlsxwriter') as writer:
                 df_download.to_excel(writer, index=False, sheet_name='DataMatrix')
             with open('attendance.xlsx', 'rb') as f:
