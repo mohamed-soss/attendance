@@ -15,6 +15,9 @@ from gspread.exceptions import APIError
 # Egypt timezone
 EGYPT_TZ = ZoneInfo("Africa/Cairo")
 
+# Global dataframe
+df = pd.DataFrame()
+
 # Google Sheets setup - FIXED VERSION
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", 
           "https://www.googleapis.com/auth/drive"]
@@ -65,48 +68,49 @@ def load_sheet_data():
         if not data:
             return pd.DataFrame(columns=EXPECTED_COLUMNS)
             
-        df = pd.DataFrame(data)
-        return process_dataframe(df)
+        temp_df = pd.DataFrame(data)
+        return process_dataframe(temp_df)
         
     except Exception as e:
         st.error(f"Error loading data from Google Sheets: {str(e)}")
         # Return empty dataframe with correct structure
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-def process_dataframe(df):
+def process_dataframe(temp_df):
     """Process and clean the dataframe"""
     # Ensure all expected columns exist
     for col in EXPECTED_COLUMNS:
-        if col not in df.columns:
+        if col not in temp_df.columns:
             if col == 'Active':
-                df[col] = True
+                temp_df[col] = True
             elif col in TIME_COLUMNS:
-                df[col] = pd.NA
+                temp_df[col] = pd.NA
             else:
-                df[col] = pd.NA
+                temp_df[col] = pd.NA
     
     # Replace empty strings with NaN
-    df.replace('', pd.NA, inplace=True)
+    temp_df.replace('', pd.NA, inplace=True)
     
     # Convert time columns to string
     for col in TIME_COLUMNS:
-        df[col] = df[col].astype("string").fillna(pd.NA)
+        temp_df[col] = temp_df[col].astype("string").fillna(pd.NA)
     
     # Convert numeric columns
-    df['TotalHours'] = pd.to_numeric(df['TotalHours'], errors='coerce').fillna(0.0).astype("float64")
-    df['BreakDuration'] = pd.to_numeric(df['BreakDuration'], errors='coerce').fillna(0.0).astype("float64")
+    temp_df['TotalHours'] = pd.to_numeric(temp_df['TotalHours'], errors='coerce').fillna(0.0).astype("float64")
+    temp_df['BreakDuration'] = pd.to_numeric(temp_df['BreakDuration'], errors='coerce').fillna(0.0).astype("float64")
     
     # Convert Active column to boolean
-    df['Active'] = df['Active'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', True, 1] if pd.notna(x) else True)
+    temp_df['Active'] = temp_df['Active'].apply(lambda x: str(x).lower() in ['true', '1', 't', 'y', 'yes', True, 1] if pd.notna(x) else True)
     
     # Convert Date column
-    if not df.empty and 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce', format='%Y-%m-%d')
+    if not temp_df.empty and 'Date' in temp_df.columns:
+        temp_df['Date'] = pd.to_datetime(temp_df['Date'], errors='coerce', format='%Y-%m-%d')
     
-    return df
+    return temp_df
 
-def save_to_sheets(df):
-    """Save dataframe to Google Sheets"""
+def save_to_sheets():
+    """Save global df to Google Sheets"""
+    global df
     try:
         if CLIENT is None:
             st.error("Google Sheets client not initialized")
@@ -154,6 +158,7 @@ df = load_sheet_data()
 
 # Function to restore data from Excel - FIXED
 def restore_from_excel(uploaded_file):
+    global df
     try:
         uploaded_df = pd.read_excel(uploaded_file, sheet_name=0)  # Read first sheet
         
@@ -178,7 +183,6 @@ def restore_from_excel(uploaded_file):
         uploaded_df = process_dataframe(uploaded_df)
         
         # Merge with existing data
-        global df
         if df.empty:
             df = uploaded_df
         else:
@@ -196,7 +200,7 @@ def restore_from_excel(uploaded_file):
             df = df.drop(columns=['composite_key'])
         
         # Save to Google Sheets
-        if save_to_sheets(df):
+        if save_to_sheets():
             st.success("Data restored successfully!")
             return True
         else:
@@ -263,11 +267,14 @@ if 'last_action' not in st.session_state:
     st.session_state.last_action = None
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
+if 'admin_authenticated' not in st.session_state:
+    st.session_state.admin_authenticated = False
 
 # Reload button in sidebar
 with st.sidebar:
     if st.button("🔄 Reload Data", use_container_width=True):
         st.cache_data.clear()
+        global df
         df = load_sheet_data()
         st.session_state.data_loaded = True
         st.rerun()
@@ -379,7 +386,7 @@ if selected == "🚀 USER PORTAL":
                     df = process_dataframe(df)
                     
                     # Save to Google Sheets
-                    if save_to_sheets(df):
+                    if save_to_sheets():
                         st.session_state.last_action = "New session initialized"
                         st.success("🚀 SESSION INITIALIZED")
                         st.rerun()
@@ -401,7 +408,7 @@ if selected == "🚀 USER PORTAL":
                         total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
                         df.at[row_index, 'TotalHours'] = total_hours
                         df.at[row_index, 'BreakDuration'] = break_duration
-                        if save_to_sheets(df):
+                        if save_to_sheets():
                             st.session_state.last_action = "Checked in"
                             st.rerun()
                 
@@ -413,7 +420,7 @@ if selected == "🚀 USER PORTAL":
                                 total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
                                 df.at[row_index, 'TotalHours'] = total_hours
                                 df.at[row_index, 'BreakDuration'] = break_duration
-                                if save_to_sheets(df):
+                                if save_to_sheets():
                                     st.session_state.last_action = f"Break {i} started"
                                     st.rerun()
                 
@@ -424,7 +431,7 @@ if selected == "🚀 USER PORTAL":
                             total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
                             df.at[row_index, 'TotalHours'] = total_hours
                             df.at[row_index, 'BreakDuration'] = break_duration
-                            if save_to_sheets(df):
+                            if save_to_sheets():
                                 st.session_state.last_action = f"Break {i} ended"
                                 st.rerun()
                     
@@ -434,7 +441,7 @@ if selected == "🚀 USER PORTAL":
                             total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
                             df.at[row_index, 'TotalHours'] = total_hours
                             df.at[row_index, 'BreakDuration'] = break_duration
-                            if save_to_sheets(df):
+                            if save_to_sheets():
                                 st.session_state.last_action = "Checked out"
                                 st.rerun()
                 
@@ -475,10 +482,6 @@ elif selected == "⚙️ COMMAND CENTER":
     # ADMIN ACCESS - FIXED LOGIC
     with st.container():
         st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
-        
-        # Initialize admin session state
-        if 'admin_authenticated' not in st.session_state:
-            st.session_state.admin_authenticated = False
         
         if not st.session_state.admin_authenticated:
             admin_password = st.text_input("🔐 ENTER ACCESS CODE", type="password", 
@@ -564,8 +567,9 @@ elif selected == "⚙️ COMMAND CENTER":
             
             if st.button("💾 SAVE CHANGES", use_container_width=True):
                 # Update the main dataframe
+                global df
                 df.update(edited_df)
-                if save_to_sheets(df):
+                if save_to_sheets():
                     st.success("✅ DATA MATRIX UPDATED SUCCESSFULLY!")
                     st.session_state.last_action = "Data matrix updated"
                     st.rerun()
@@ -665,7 +669,7 @@ elif selected == "⚙️ COMMAND CENTER":
                     df = pd.concat([df, new_row_df], ignore_index=True)
                     df = process_dataframe(df)
                     
-                    if save_to_sheets(df):
+                    if save_to_sheets():
                         st.success(f"✅ USER {new_user} AUTHORIZED")
                         st.session_state.last_action = f"User {new_user} added"
                         st.rerun()
@@ -740,7 +744,7 @@ elif selected == "⚙️ COMMAND CENTER":
                                 df.at[session_index, 'TotalHours'] = total_hours
                                 df.at[session_index, 'BreakDuration'] = break_duration
                                 
-                                if save_to_sheets(df):
+                                if save_to_sheets():
                                     st.success(f"✅ SESSION FOR {edit_user} ON {edit_date} UPDATED!")
                                     st.session_state.last_action = f"Session for {edit_user} updated"
                                     st.rerun()
@@ -762,11 +766,11 @@ elif selected == "⚙️ COMMAND CENTER":
                     else:
                         if action == "Deactivate User (Keep Data)":
                             df.loc[df['User'] == remove_user, 'Active'] = False
-                            if save_to_sheets(df):
+                            if save_to_sheets():
                                 st.success(f"✅ USER {remove_user} DEACTIVATED. HISTORICAL DATA RETAINED.")
                         elif action == "Delete User and All Data":
                             df = df[df['User'] != remove_user]
-                            if save_to_sheets(df):
+                            if save_to_sheets():
                                 st.success(f"✅ USER {remove_user} AND ALL ASSOCIATED DATA DELETED.")
                         
                         st.session_state.last_action = f"User {remove_user} {action.lower()}"
@@ -778,7 +782,7 @@ elif selected == "⚙️ COMMAND CENTER":
         st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
         st.markdown("<h3 style='color: var(--primary-glow);'>📤 DATA EXPORT</h3>", unsafe_allow_html=True)
         
-        def get_excel_download_link(df):
+        def get_excel_download_link():
             df_download = df.copy()
             df_download['Date'] = df_download['Date'].dt.strftime('%Y-%m-%d')
             df_download = df_download.fillna('')
@@ -795,7 +799,7 @@ elif selected == "⚙️ COMMAND CENTER":
             return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="attendance_data.xlsx" style="display: inline-block; padding: 0.5rem 1rem; background: linear-gradient(135deg, rgba(0, 242, 255, 0.2), rgba(255, 0, 255, 0.2)); border: 1px solid var(--cyber-border); border-radius: 5px; color: var(--text-neon); text-decoration: none; font-family: Exo 2, sans-serif; font-weight: 600;">📥 DOWNLOAD DATA MATRIX</a>'
         
         if not df.empty:
-            st.markdown(get_excel_download_link(df), unsafe_allow_html=True)
+            st.markdown(get_excel_download_link(), unsafe_allow_html=True)
         else:
             st.info("No data available for export")
         
