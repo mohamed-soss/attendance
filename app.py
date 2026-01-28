@@ -15,8 +15,8 @@ from gspread.exceptions import APIError
 # Egypt timezone
 EGYPT_TZ = ZoneInfo("Africa/Cairo")
 
-# Global dataframe
-df = pd.DataFrame()
+# Initialize global dataframe as None
+df = None
 
 # Google Sheets setup - FIXED VERSION
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", 
@@ -42,39 +42,14 @@ def get_gsheet_client():
 # Initialize Google Sheets client
 CLIENT = get_gsheet_client()
 
-@st.cache_data(ttl=60)
-def load_sheet_data():
-    """Load data from Google Sheets with caching"""
-    try:
-        if CLIENT is None:
-            st.error("Google Sheets client not initialized")
-            return pd.DataFrame()
-        
-        # Try to open the spreadsheet
-        try:
-            spreadsheet = CLIENT.open("AttendanceSheet")
-            sheet = spreadsheet.sheet1
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error("Spreadsheet 'AttendanceSheet' not found. Creating new sheet...")
-            # Create a new spreadsheet
-            spreadsheet = CLIENT.create("AttendanceSheet")
-            sheet = spreadsheet.sheet1
-            # Add headers
-            sheet.append_row(EXPECTED_COLUMNS)
-        
-        # Get all records
-        data = sheet.get_all_records()
-        
-        if not data:
-            return pd.DataFrame(columns=EXPECTED_COLUMNS)
-            
-        temp_df = pd.DataFrame(data)
-        return process_dataframe(temp_df)
-        
-    except Exception as e:
-        st.error(f"Error loading data from Google Sheets: {str(e)}")
-        # Return empty dataframe with correct structure
-        return pd.DataFrame(columns=EXPECTED_COLUMNS)
+# Define expected columns
+EXPECTED_COLUMNS = ['User', 'Date', 'CheckIn', 'CheckOut',
+                    'Break1Start', 'Break1End', 'Break2Start', 'Break2End',
+                    'Break3Start', 'Break3End', 'TotalHours', 'BreakDuration', 'Active']
+
+# Time-related columns to enforce string dtype
+TIME_COLUMNS = ['CheckIn', 'CheckOut', 'Break1Start', 'Break1End',
+                'Break2Start', 'Break2End', 'Break3Start', 'Break3End']
 
 def process_dataframe(temp_df):
     """Process and clean the dataframe"""
@@ -108,9 +83,48 @@ def process_dataframe(temp_df):
     
     return temp_df
 
+@st.cache_data(ttl=60)
+def load_sheet_data():
+    """Load data from Google Sheets with caching"""
+    try:
+        if CLIENT is None:
+            st.error("Google Sheets client not initialized")
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
+        
+        # Try to open the spreadsheet
+        try:
+            spreadsheet = CLIENT.open("AttendanceSheet")
+            sheet = spreadsheet.sheet1
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("Spreadsheet 'AttendanceSheet' not found. Creating new sheet...")
+            # Create a new spreadsheet
+            spreadsheet = CLIENT.create("AttendanceSheet")
+            sheet = spreadsheet.sheet1
+            # Add headers
+            sheet.append_row(EXPECTED_COLUMNS)
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
+        
+        # Get all records
+        data = sheet.get_all_records()
+        
+        if not data:
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
+            
+        temp_df = pd.DataFrame(data)
+        return process_dataframe(temp_df)
+        
+    except Exception as e:
+        st.error(f"Error loading data from Google Sheets: {str(e)}")
+        # Return empty dataframe with correct structure
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
+
 def save_to_sheets():
     """Save global df to Google Sheets"""
     global df
+    if df is None or df.empty:
+        st.error("No data to save")
+        return False
+    
     try:
         if CLIENT is None:
             st.error("Google Sheets client not initialized")
@@ -144,15 +158,6 @@ def save_to_sheets():
         st.error(f"Error saving to Google Sheets: {str(e)}")
         return False
 
-# Define expected columns
-EXPECTED_COLUMNS = ['User', 'Date', 'CheckIn', 'CheckOut',
-                    'Break1Start', 'Break1End', 'Break2Start', 'Break2End',
-                    'Break3Start', 'Break3End', 'TotalHours', 'BreakDuration', 'Active']
-
-# Time-related columns to enforce string dtype
-TIME_COLUMNS = ['CheckIn', 'CheckOut', 'Break1Start', 'Break1End',
-                'Break2Start', 'Break2End', 'Break3Start', 'Break3End']
-
 # Load initial data
 df = load_sheet_data()
 
@@ -183,7 +188,7 @@ def restore_from_excel(uploaded_file):
         uploaded_df = process_dataframe(uploaded_df)
         
         # Merge with existing data
-        if df.empty:
+        if df is None or df.empty:
             df = uploaded_df
         else:
             # Create a composite key for deduplication
@@ -258,7 +263,43 @@ def calculate_times(row, shift_date):
     
     return total_hours, break_duration
 
-# CSS remains the same...
+# ULTRA MODERN CSS WITH ADVANCED ANIMATIONS (Same as before, truncated for brevity)
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Exo+2:wght@100;200;300;400;500;600;700;800;900&display=swap');
+    
+    :root {
+        --primary-glow: #00f2ff;
+        --secondary-glow: #ff00ff;
+        --accent-glow: #00ff88;
+        --warning-glow: #ffaa00;
+        --deep-space: #0a0a1f;
+        --nebula-purple: #1a1a3e;
+        --cosmic-blue: #0f1f3f;
+        --stardust: rgba(255,255,255,0.1);
+        --text-neon: #ffffff;
+        --cyber-border: rgba(0, 242, 255, 0.3);
+    }
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body, .stApp {
+        background: linear-gradient(135deg, var(--deep-space) 0%, var(--nebula-purple) 50%, var(--cosmic-blue) 100%);
+        background-size: 400% 400%;
+        animation: cosmicShift 20s ease infinite;
+        color: var(--text-neon);
+        font-family: 'Rajdhani', sans-serif;
+        overflow-x: hidden;
+        min-height: 100vh;
+    }
+    
+    /* ... rest of the CSS ... */
+    </style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
 if 'selected_user' not in st.session_state:
@@ -328,7 +369,10 @@ if selected == "🚀 USER PORTAL":
     
     with st.container():
         st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
-        active_users = sorted(df[df['Active'] == True]['User'].unique().tolist())
+        if df is None or df.empty:
+            active_users = []
+        else:
+            active_users = sorted(df[df['Active'] == True]['User'].unique().tolist())
         
         with st.form(key="user_selection_form"):
             if not active_users:
@@ -352,128 +396,133 @@ if selected == "🚀 USER PORTAL":
 
     if st.session_state.selected_user:
         user_name = st.session_state.selected_user
-        user_records = df[df['User'] == user_name]
-        user_active = user_records['Active'].any() if not user_records.empty else True
         
-        if not user_active:
-            st.error("⚠️ ACCESS DENIED: User account has been deactivated.")
+        if df is None or df.empty:
+            st.error("No data available")
             st.session_state.selected_user = None
         else:
-            shift_date = get_shift_date()
-            user_rows = df[(df['User'] == user_name) & (df['Date'].dt.date == shift_date)]
+            user_records = df[df['User'] == user_name]
+            user_active = user_records['Active'].any() if not user_records.empty else True
             
-            # Start New Session
-            col1, col2, col3 = st.columns([2, 1, 2])
-            with col2:
-                if st.button("🎯 INITIATE NEW SESSION", use_container_width=True, key="start_session"):
-                    new_row = {
-                        'User': user_name,
-                        'Date': pd.to_datetime(shift_date),
-                        'Active': True,
-                        'CheckIn': pd.NA,
-                        'CheckOut': pd.NA,
-                        'TotalHours': 0.0,
-                        'BreakDuration': 0.0
-                    }
-                    for i in range(1, 4):
-                        new_row[f'Break{i}Start'] = pd.NA
-                        new_row[f'Break{i}End'] = pd.NA
-                    
-                    # Add new row to dataframe
-                    new_row_df = pd.DataFrame([new_row])
-                    global df
-                    df = pd.concat([df, new_row_df], ignore_index=True)
-                    df = process_dataframe(df)
-                    
-                    # Save to Google Sheets
-                    if save_to_sheets():
-                        st.session_state.last_action = "New session initialized"
-                        st.success("🚀 SESSION INITIALIZED")
-                        st.rerun()
-                    else:
-                        st.error("Failed to save session")
-
-            if not user_rows.empty:
-                row_index = user_rows.index[-1]
+            if not user_active:
+                st.error("⚠️ ACCESS DENIED: User account has been deactivated.")
+                st.session_state.selected_user = None
+            else:
+                shift_date = get_shift_date()
+                user_rows = df[(df['User'] == user_name) & (df['Date'].dt.date == shift_date)]
                 
-                # Action Buttons Grid
-                st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
-                st.markdown("<h3 style='color: var(--primary-glow); text-align: center;'>MISSION CONTROL</h3>", unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    if st.button("🟢 CHECK IN", use_container_width=True, key=f"check_in_{row_index}") and pd.isna(df.at[row_index, 'CheckIn']):
-                        df.at[row_index, 'CheckIn'] = format_time(datetime.now(EGYPT_TZ))
-                        total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
-                        df.at[row_index, 'TotalHours'] = total_hours
-                        df.at[row_index, 'BreakDuration'] = break_duration
-                        if save_to_sheets():
-                            st.session_state.last_action = "Checked in"
-                            st.rerun()
-                
+                # Start New Session
+                col1, col2, col3 = st.columns([2, 1, 2])
                 with col2:
-                    for i in range(1, 4):
-                        if st.button(f"☕ BREAK {i} START", use_container_width=True, key=f"break_{i}_start_{row_index}") and pd.isna(df.at[row_index, f'Break{i}Start']) and pd.notna(df.at[row_index, 'CheckIn']):
-                            if i == 1 or (pd.notna(df.at[row_index, f'Break{i-1}End'])):
-                                df.at[row_index, f'Break{i}Start'] = format_time(datetime.now(EGYPT_TZ))
+                    if st.button("🎯 INITIATE NEW SESSION", use_container_width=True, key="start_session"):
+                        new_row = {
+                            'User': user_name,
+                            'Date': pd.to_datetime(shift_date),
+                            'Active': True,
+                            'CheckIn': pd.NA,
+                            'CheckOut': pd.NA,
+                            'TotalHours': 0.0,
+                            'BreakDuration': 0.0
+                        }
+                        for i in range(1, 4):
+                            new_row[f'Break{i}Start'] = pd.NA
+                            new_row[f'Break{i}End'] = pd.NA
+                        
+                        # Add new row to dataframe
+                        new_row_df = pd.DataFrame([new_row])
+                        global df
+                        df = pd.concat([df, new_row_df], ignore_index=True)
+                        df = process_dataframe(df)
+                        
+                        # Save to Google Sheets
+                        if save_to_sheets():
+                            st.session_state.last_action = "New session initialized"
+                            st.success("🚀 SESSION INITIALIZED")
+                            st.rerun()
+                        else:
+                            st.error("Failed to save session")
+
+                if not user_rows.empty:
+                    row_index = user_rows.index[-1]
+                    
+                    # Action Buttons Grid
+                    st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
+                    st.markdown("<h3 style='color: var(--primary-glow); text-align: center;'>MISSION CONTROL</h3>", unsafe_allow_html=True)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("🟢 CHECK IN", use_container_width=True, key=f"check_in_{row_index}") and pd.isna(df.at[row_index, 'CheckIn']):
+                            df.at[row_index, 'CheckIn'] = format_time(datetime.now(EGYPT_TZ))
+                            total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
+                            df.at[row_index, 'TotalHours'] = total_hours
+                            df.at[row_index, 'BreakDuration'] = break_duration
+                            if save_to_sheets():
+                                st.session_state.last_action = "Checked in"
+                                st.rerun()
+                    
+                    with col2:
+                        for i in range(1, 4):
+                            if st.button(f"☕ BREAK {i} START", use_container_width=True, key=f"break_{i}_start_{row_index}") and pd.isna(df.at[row_index, f'Break{i}Start']) and pd.notna(df.at[row_index, 'CheckIn']):
+                                if i == 1 or (pd.notna(df.at[row_index, f'Break{i-1}End'])):
+                                    df.at[row_index, f'Break{i}Start'] = format_time(datetime.now(EGYPT_TZ))
+                                    total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
+                                    df.at[row_index, 'TotalHours'] = total_hours
+                                    df.at[row_index, 'BreakDuration'] = break_duration
+                                    if save_to_sheets():
+                                        st.session_state.last_action = f"Break {i} started"
+                                        st.rerun()
+                    
+                    with col3:
+                        for i in range(1, 4):
+                            if st.button(f"🔙 BREAK {i} END", use_container_width=True, key=f"break_{i}_end_{row_index}") and pd.notna(df.at[row_index, f'Break{i}Start']) and pd.isna(df.at[row_index, f'Break{i}End']):
+                                df.at[row_index, f'Break{i}End'] = format_time(datetime.now(EGYPT_TZ))
                                 total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
                                 df.at[row_index, 'TotalHours'] = total_hours
                                 df.at[row_index, 'BreakDuration'] = break_duration
                                 if save_to_sheets():
-                                    st.session_state.last_action = f"Break {i} started"
+                                    st.session_state.last_action = f"Break {i} ended"
                                     st.rerun()
-                
-                with col3:
-                    for i in range(1, 4):
-                        if st.button(f"🔙 BREAK {i} END", use_container_width=True, key=f"break_{i}_end_{row_index}") and pd.notna(df.at[row_index, f'Break{i}Start']) and pd.isna(df.at[row_index, f'Break{i}End']):
-                            df.at[row_index, f'Break{i}End'] = format_time(datetime.now(EGYPT_TZ))
-                            total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
-                            df.at[row_index, 'TotalHours'] = total_hours
-                            df.at[row_index, 'BreakDuration'] = break_duration
-                            if save_to_sheets():
-                                st.session_state.last_action = f"Break {i} ended"
-                                st.rerun()
+                        
+                        if st.button("🔴 CHECK OUT", use_container_width=True, key=f"check_out_{row_index}") and pd.notna(df.at[row_index, 'CheckIn']) and pd.isna(df.at[row_index, 'CheckOut']):
+                            if all(pd.notna(df.at[row_index, f'Break{i}End']) for i in range(1, 4) if pd.notna(df.at[row_index, f'Break{i}Start'])):
+                                df.at[row_index, 'CheckOut'] = format_time(datetime.now(EGYPT_TZ))
+                                total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
+                                df.at[row_index, 'TotalHours'] = total_hours
+                                df.at[row_index, 'BreakDuration'] = break_duration
+                                if save_to_sheets():
+                                    st.session_state.last_action = "Checked out"
+                                    st.rerun()
                     
-                    if st.button("🔴 CHECK OUT", use_container_width=True, key=f"check_out_{row_index}") and pd.notna(df.at[row_index, 'CheckIn']) and pd.isna(df.at[row_index, 'CheckOut']):
-                        if all(pd.notna(df.at[row_index, f'Break{i}End']) for i in range(1, 4) if pd.notna(df.at[row_index, f'Break{i}Start'])):
-                            df.at[row_index, 'CheckOut'] = format_time(datetime.now(EGYPT_TZ))
-                            total_hours, break_duration = calculate_times(df.loc[row_index], shift_date)
-                            df.at[row_index, 'TotalHours'] = total_hours
-                            df.at[row_index, 'BreakDuration'] = break_duration
-                            if save_to_sheets():
-                                st.session_state.last_action = "Checked out"
-                                st.rerun()
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-                # Current Session Status
-                st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
-                st.markdown("<h3 style='color: var(--accent-glow);'>LIVE SESSION STATUS</h3>", unsafe_allow_html=True)
-                
-                status_data = {
-                    "Check In": df.at[row_index, 'CheckIn'],
-                    "Check Out": df.at[row_index, 'CheckOut'],
-                    "Total Hours": f"{df.at[row_index, 'TotalHours']:.2f} hours",
-                    "Break Duration": f"{df.at[row_index, 'BreakDuration']:.2f} hours"
-                }
-                
-                for i in range(1, 4):
-                    status_data[f"Break {i} Start"] = df.at[row_index, f'Break{i}Start']
-                    status_data[f"Break {i} End"] = df.at[row_index, f'Break{i}End']
-                
-                cols = st.columns(3)
-                col_idx = 0
-                for key, value in status_data.items():
-                    with cols[col_idx]:
-                        st.metric(
-                            label=key,
-                            value=value if pd.notna(value) else "⏳ PENDING",
-                            delta="ACTIVE" if "Start" in key and pd.notna(value) and pd.isna(status_data.get(key.replace("Start", "End"), None)) else None
-                        )
-                    col_idx = (col_idx + 1) % 3
-                
-                st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    # Current Session Status
+                    st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
+                    st.markdown("<h3 style='color: var(--accent-glow);'>LIVE SESSION STATUS</h3>", unsafe_allow_html=True)
+                    
+                    status_data = {
+                        "Check In": df.at[row_index, 'CheckIn'],
+                        "Check Out": df.at[row_index, 'CheckOut'],
+                        "Total Hours": f"{df.at[row_index, 'TotalHours']:.2f} hours",
+                        "Break Duration": f"{df.at[row_index, 'BreakDuration']:.2f} hours"
+                    }
+                    
+                    for i in range(1, 4):
+                        status_data[f"Break {i} Start"] = df.at[row_index, f'Break{i}Start']
+                        status_data[f"Break {i} End"] = df.at[row_index, f'Break{i}End']
+                    
+                    cols = st.columns(3)
+                    col_idx = 0
+                    for key, value in status_data.items():
+                        with cols[col_idx]:
+                            st.metric(
+                                label=key,
+                                value=value if pd.notna(value) else "⏳ PENDING",
+                                delta="ACTIVE" if "Start" in key and pd.notna(value) and pd.isna(status_data.get(key.replace("Start", "End"), None)) else None
+                            )
+                        col_idx = (col_idx + 1) % 3
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 # Admin Dashboard - FIXED VERSION
 elif selected == "⚙️ COMMAND CENTER":
@@ -521,60 +570,63 @@ elif selected == "⚙️ COMMAND CENTER":
         st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
         st.markdown("<h3 style='color: var(--primary-glow);'>🛠️ DATA MATRIX EDITOR</h3>", unsafe_allow_html=True)
         
-        # Filter options
-        col1, col2 = st.columns(2)
-        with col1:
-            filter_user = st.selectbox("FILTER BY USER", 
-                                      options=['All'] + sorted(df['User'].astype(str).unique().tolist()), 
-                                      key='filter_user')
-        with col2:
-            if not df.empty and 'Date' in df.columns:
-                dates = ['All'] + sorted(df['Date'].dt.strftime('%Y-%m-%d').unique().tolist())
-            else:
-                dates = ['All']
-            filter_date = st.selectbox("FILTER BY DATE", options=dates, key='filter_date')
-        
-        filtered_df = df.copy()
-        if filter_user != 'All':
-            filtered_df = filtered_df[filtered_df['User'] == filter_user]
-        if filter_date != 'All':
-            filtered_df = filtered_df[filtered_df['Date'].dt.strftime('%Y-%m-%d') == filter_date]
-        
-        # Display and edit data
-        if not filtered_df.empty:
-            # Create editable dataframe
-            edited_df = st.data_editor(
-                filtered_df,
-                column_config={
-                    "User": st.column_config.TextColumn("User"),
-                    "Date": st.column_config.DateColumn("Date"),
-                    "CheckIn": st.column_config.TextColumn("Check In"),
-                    "CheckOut": st.column_config.TextColumn("Check Out"),
-                    "Break1Start": st.column_config.TextColumn("Break 1 Start"),
-                    "Break1End": st.column_config.TextColumn("Break 1 End"),
-                    "Break2Start": st.column_config.TextColumn("Break 2 Start"),
-                    "Break2End": st.column_config.TextColumn("Break 2 End"),
-                    "Break3Start": st.column_config.TextColumn("Break 3 Start"),
-                    "Break3End": st.column_config.TextColumn("Break 3 End"),
-                    "TotalHours": st.column_config.NumberColumn("Total Hours"),
-                    "BreakDuration": st.column_config.NumberColumn("Break Duration"),
-                    "Active": st.column_config.CheckboxColumn("Active")
-                },
-                use_container_width=True,
-                height=400,
-                key="data_editor"
-            )
-            
-            if st.button("💾 SAVE CHANGES", use_container_width=True):
-                # Update the main dataframe
-                global df
-                df.update(edited_df)
-                if save_to_sheets():
-                    st.success("✅ DATA MATRIX UPDATED SUCCESSFULLY!")
-                    st.session_state.last_action = "Data matrix updated"
-                    st.rerun()
+        if df is None or df.empty:
+            st.info("No data available in the system")
         else:
-            st.info("No data to display with current filters")
+            # Filter options
+            col1, col2 = st.columns(2)
+            with col1:
+                filter_user = st.selectbox("FILTER BY USER", 
+                                          options=['All'] + sorted(df['User'].astype(str).unique().tolist()), 
+                                          key='filter_user')
+            with col2:
+                if not df.empty and 'Date' in df.columns:
+                    dates = ['All'] + sorted(df['Date'].dt.strftime('%Y-%m-%d').unique().tolist())
+                else:
+                    dates = ['All']
+                filter_date = st.selectbox("FILTER BY DATE", options=dates, key='filter_date')
+            
+            filtered_df = df.copy()
+            if filter_user != 'All':
+                filtered_df = filtered_df[filtered_df['User'] == filter_user]
+            if filter_date != 'All':
+                filtered_df = filtered_df[filtered_df['Date'].dt.strftime('%Y-%m-%d') == filter_date]
+            
+            # Display and edit data
+            if not filtered_df.empty:
+                # Create editable dataframe
+                edited_df = st.data_editor(
+                    filtered_df,
+                    column_config={
+                        "User": st.column_config.TextColumn("User"),
+                        "Date": st.column_config.DateColumn("Date"),
+                        "CheckIn": st.column_config.TextColumn("Check In"),
+                        "CheckOut": st.column_config.TextColumn("Check Out"),
+                        "Break1Start": st.column_config.TextColumn("Break 1 Start"),
+                        "Break1End": st.column_config.TextColumn("Break 1 End"),
+                        "Break2Start": st.column_config.TextColumn("Break 2 Start"),
+                        "Break2End": st.column_config.TextColumn("Break 2 End"),
+                        "Break3Start": st.column_config.TextColumn("Break 3 Start"),
+                        "Break3End": st.column_config.TextColumn("Break 3 End"),
+                        "TotalHours": st.column_config.NumberColumn("Total Hours"),
+                        "BreakDuration": st.column_config.NumberColumn("Break Duration"),
+                        "Active": st.column_config.CheckboxColumn("Active")
+                    },
+                    use_container_width=True,
+                    height=400,
+                    key="data_editor"
+                )
+                
+                if st.button("💾 SAVE CHANGES", use_container_width=True):
+                    # Update the main dataframe
+                    global df
+                    df.update(edited_df)
+                    if save_to_sheets():
+                        st.success("✅ DATA MATRIX UPDATED SUCCESSFULLY!")
+                        st.session_state.last_action = "Data matrix updated"
+                        st.rerun()
+            else:
+                st.info("No data to display with current filters")
         
         st.markdown("</div>", unsafe_allow_html=True)
         
@@ -582,7 +634,7 @@ elif selected == "⚙️ COMMAND CENTER":
         st.markdown("<div class='cyber-card'>", unsafe_allow_html=True)
         st.markdown("<h3 style='color: var(--primary-glow);'>📈 QUANTUM ANALYTICS</h3>", unsafe_allow_html=True)
         
-        if not df.empty:
+        if df is not None and not df.empty:
             # Total Hours per User Bar Chart
             total_hours_df = df.groupby('User')['TotalHours'].sum().reset_index()
             if not total_hours_df.empty:
@@ -645,6 +697,9 @@ elif selected == "⚙️ COMMAND CENTER":
             st.markdown("<h4 style='color: var(--accent-glow);'>ADD NEW USER</h4>", unsafe_allow_html=True)
             new_user = st.text_input("Enter new user name", placeholder="New User Identity...", key="new_user_input")
             if st.button("🔧 ADD USER", use_container_width=True, key="add_user_btn") and new_user:
+                if df is None:
+                    df = pd.DataFrame(columns=EXPECTED_COLUMNS)
+                
                 user_records = df[df['User'] == new_user]
                 if user_records.empty or not user_records['Active'].any():
                     # Add default session for the user
@@ -678,7 +733,7 @@ elif selected == "⚙️ COMMAND CENTER":
         
         with tab2:
             st.markdown("<h4 style='color: var(--accent-glow);'>EDIT USER SESSION</h4>", unsafe_allow_html=True)
-            if not df.empty:
+            if df is not None and not df.empty:
                 edit_user = st.selectbox("SELECT USER", 
                                        options=['Select User'] + sorted(df['User'].astype(str).unique().tolist()), 
                                        key='edit_user_select')
@@ -751,7 +806,7 @@ elif selected == "⚙️ COMMAND CENTER":
         
         with tab3:
             st.markdown("<h4 style='color: var(--accent-glow);'>REMOVE USER</h4>", unsafe_allow_html=True)
-            if not df.empty:
+            if df is not None and not df.empty:
                 remove_user = st.selectbox("SELECT USER TO REMOVE", 
                                          options=['Select User'] + sorted(df['User'].astype(str).unique().tolist()), 
                                          key='remove_user_select')
@@ -783,6 +838,9 @@ elif selected == "⚙️ COMMAND CENTER":
         st.markdown("<h3 style='color: var(--primary-glow);'>📤 DATA EXPORT</h3>", unsafe_allow_html=True)
         
         def get_excel_download_link():
+            if df is None or df.empty:
+                return "No data available for export"
+            
             df_download = df.copy()
             df_download['Date'] = df_download['Date'].dt.strftime('%Y-%m-%d')
             df_download = df_download.fillna('')
@@ -798,10 +856,11 @@ elif selected == "⚙️ COMMAND CENTER":
             b64 = base64.b64encode(data).decode()
             return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="attendance_data.xlsx" style="display: inline-block; padding: 0.5rem 1rem; background: linear-gradient(135deg, rgba(0, 242, 255, 0.2), rgba(255, 0, 255, 0.2)); border: 1px solid var(--cyber-border); border-radius: 5px; color: var(--text-neon); text-decoration: none; font-family: Exo 2, sans-serif; font-weight: 600;">📥 DOWNLOAD DATA MATRIX</a>'
         
-        if not df.empty:
-            st.markdown(get_excel_download_link(), unsafe_allow_html=True)
+        download_link = get_excel_download_link()
+        if "No data available" in download_link:
+            st.info(download_link)
         else:
-            st.info("No data available for export")
+            st.markdown(download_link, unsafe_allow_html=True)
         
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -817,16 +876,18 @@ st.sidebar.markdown(f"""
         <div style='font-size: 0.9rem; color: var(--primary-glow);'>QUANTUM TIME</div>
         <div style='font-family: Orbitron; font-size: 1.1rem; color: var(--accent-glow);'>{current_time}</div>
         <div style='font-size: 0.8rem; color: var(--stardust); margin-top: 10px;'>
-            Data Rows: {len(df)}<br>
-            Active Users: {len(df[df['Active'] == True]['User'].unique())}
+            Data Rows: {len(df) if df is not None else 0}<br>
+            Active Users: {len(df[df['Active'] == True]['User'].unique()) if df is not None and not df.empty else 0}
         </div>
     </div>
 """, unsafe_allow_html=True)
 
 # Add debug info in sidebar (optional)
 with st.sidebar.expander("Debug Info"):
-    st.write(f"DataFrame shape: {df.shape}")
-    st.write(f"Columns: {list(df.columns)}")
-    if not df.empty:
-        st.write(f"Latest date: {df['Date'].max()}")
-        st.write(f"User count: {len(df['User'].unique())}")
+    st.write(f"DataFrame is None: {df is None}")
+    if df is not None:
+        st.write(f"DataFrame shape: {df.shape}")
+        st.write(f"Columns: {list(df.columns)}")
+        if not df.empty:
+            st.write(f"Latest date: {df['Date'].max()}")
+            st.write(f"User count: {len(df['User'].unique())}")
