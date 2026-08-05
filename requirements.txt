@@ -1,4 +1,4 @@
-streamlit
+streamlit==1.35.0
 pandas
 plotly
 gspread
@@ -6,3 +6,5 @@ google-auth
 streamlit-option-menu
 openpyxl
 xlsxwriter
+starlette==0.37.2
+uvicorn==0.27.1
